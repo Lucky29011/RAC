@@ -1,0 +1,316 @@
+/u02	40gb
+/u01	45gb
+/tmp	5800MB
+/boot	1024mb
+/		20gb
+swap	8500mb
+
+
+root
+=====
+yum install -y oracle-database-preinstall-19c
+
+yum install -y oracleasm-support
+
+
+oracleasm     --checking packages
+sysctl -p 	  --checking kernal parameters
+
+--Group creation
+
+groupadd -g 5001 oinstall
+groupadd -g 5002 dba
+groupadd -g 5003 oper
+groupadd -g 5004 asmadmin
+groupadd -g 5005 asmdba
+groupadd -g 5006 asmoper
+
+-- USER creation
+
+useradd -u 5007 -g oinstall -G dba,oper,asmdba oracle
+useradd -u 5008 -g oinstall -G asmadmin,asmdba,asmoper,dba grid
+
+usermod -g oinstall -G dba,oper,asmdba oracle
+usermod -g oinstall -G asmadmin,asmdba,asmoper,dba grid
+
+id oracle
+passwd oracle
+
+id grid
+passwd  grid
+
+--add below entries in /etc/security/limits.conf file which will detine limits
+
+oracle  soft  nofile    1024
+oracle  hard  nofile    65536
+oracle  soft  nproc     16384
+oracle  hard  nproc     16384
+oracle  soft  stack     10240
+oracle  hard  stack     32768
+oracle  soft  memlock   134217728
+oracle  hard  memlock   134217728
+
+grid    soft  nofile    1024
+grid    hard  nofile    65536
+grid    soft  nproc     16384
+grid    hard  nproc     16384
+grid    soft  stack     10240
+grid    hard  stack     32768
+grid    hard  memlock   134217728
+
+---create the directories in which the oracle / grid software will be installed
+
+mkdir -p /u01/app/grid
+mkdir -p /u01/app/19c/gridhome_1
+chown -R grid:oinstall /u01
+
+mkdir -p /u02/app/oracle
+mkdir -p /u02/app/oracle/product/19c/dbhome_1
+chown -R oracle:oinstall /u02
+
+mkdir -p /u01/app/oraInventory
+mkdir -p /u01/LATEST_PATCH/
+chown -R grid:oinstall /u01/app/oraInventory
+
+chmod -R 775 /u01
+chmod -R 775 /u02
+
+--set bash_profile for grid and oracle users
+
+login to grid user and set .bash_profile
+
+export TMP=/tmp
+export TMPDIR=$TMP
+export ORACLE_BASE=/u01/app/grid
+export ORACLE_HOME=/u01/app/19c/gridhome_1
+export ORACLE_SID=+ASM1
+export ORACLE_TERM=xterm
+export BASE_PATH=/usr/sbin:$PATH
+export PATH=$ORACLE_HOME/bin:$BASE_PATH
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib:/lib:/usr/lib
+export CLASSPATH=$ORACLE_HOME/JRE:$ORACLE_HOME/jlib:$ORACLE_HOME/rdbms/jlib
+
+
+
+/*
+
+==================================
+TMP=/tmp; export TMP
+TMPDIR=$TMP; export TMPDIR
+GRID_BASE=/u01/app/grid; export GRID_BASE
+GRID_HOME=/u01/app/19c/gridhome_1; export GRID_HOME
+GRID_SID=+ASM1; export GRID_SID
+GRID_TERM=xterm; export GRID_TERM
+BASE_PATH=/usr/sbin:$PATH; export BASE_PATH
+PATH=$GRID_HOME/bin:$BASE_PATH; export PATH
+LD_LIBRARY_PATH=$GRID_HOME/lib:/lib:/usr/lib; export LD_LIBRARY_PATH
+CLASSPATH=$GRID_HOME/JRE:$GRID_HOME/jlib:$GRID_HOME/rdbms/jlib; export CLASSPATH
+
+ORACLE_HOME=$GRID_HOME; export ORACLE_HOME
+ORACLE_SID=$GRID_SID; export ORACLE_SID
+ORACLE_BASE=$GRID_BASE; export ORACLE_BASE
+ORACLE_TERM=$GRID_TERM; export ORACLE_TERM
+
+
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib:/lib:/usr/lib
+export CLASSPATH=$ORACLE_HOME/JRE:$ORACLE_HOME/jlib:$ORACLE_HOME/rdbms/jlib
+*/
+
+
+
+
+--login to oracle user and set .bash_profile:
+
+export TMP=/tmp
+export TMPDIR=$TMP
+export ORACLE_BASE=/u02/app/oracle
+export ORACLE_HOME=/u02/app/oracle/product/19c/dbhome_1
+export ORACLE_SID=prod1
+export ORACLE_TERM=xterm
+export BASE_PATH=/usr/sbin:$PATH
+export PATH=$ORACLE_HOME/bin:$BASE_PATH
+export LD_LIBRARY_PATH=$ORACLE_HOME/lib:/lib:/usr/lib
+export CLASSPATH=$ORACLE_HOME/JRE:$ORACLE_HOME/jlib:$ORACLE_HOME/rdbms/jlib
+
+--Add the following entry in /etc/hosts file and crosscheck node reachability using root user.
+
+# Private
+192.168.10.1    node1-priv.com    node1-priv
+192.168.10.2    node2-priv.com    node2-priv
+
+# Public
+192.168.29.71   node1.com         node1
+192.168.29.72   node2.com         node2
+
+# Virtual
+192.168.29.81   node1-vip.com     node1-vip
+192.168.29.82   node2-vip.com     node2-vip
+
+# SCAN
+192.168.29.91   node-scan.com     node-scan
+192.168.29.92   node-scan.com     node-scan
+192.168.29.93   node-scan.com     node-scan
+
+
+-- Firewall stop and disable
+-- we can open firewall after installation
+systemctl stop firewalld.service
+systemctl disable firewalld.service
+
+--chrony NTP configuration
+systemctl enable chronyd.service
+systemctl restart chronyd.service
+
+chronyc -a 'burst 4/4'
+chronyc -a makestep
+
+create disks in root user
+lsblk
+fdisk /dev/sdb
+n 
+p 
+enter
++20G 
+w 
+
+oracle asm configure -i 
+grid
+oinstall 
+y
+y 
+
+oracleasm init 
+
+oracleasm createdisk DATA1 /dev/sdb1
+
+oracleasm listdisks
+oracleasm scandisks
+
+-----in primaty node1 side only----
+--copy software to node1 on primary site and unzip software at grid location and rdbms home location by login respective users. means unzip grid and oracle software their respective locations.
+
+unzip grid and oraclesoftwares
+
+-- setup passwordless ssh configuration
+--grid user
+cd /u01/app/19c/gridhome_1/deinstall
+./sshUserSetup.sh -user grid -hosts "node1 node2" -noPromptPassphhrase -confirm -advanced
+cd .ssh/			--->we have tomaintain same files in all nodes otherwise copy from node 1 to other nodes 
+
+
+--similarly do it for oracle user
+cd /u02/app/oracle/product/19c/dbhome_1/deinstall
+./sshUserSetup.sh -user oracle -hosts "node1 node2" -noPromptPassphrase -confirm -advanced
+cd .ssh/			--->we have tomaintain same files in all nodes otherwise copy from node 1 to other nodes 
+
+
+--similarly do it for root user
+cd /u02/app/oracle/product/19c/dbhome_1/deinstall
+./sshUserSetup.sh -user root -hosts "node1 node2" -noPromptPassphrase -confirm -advanced
+cd .ssh/			--->we have tomaintain same files in all nodes otherwise copy from node 1 to other nodes
+
+ 
+--set profile and go to GRID_HOME location from grid user and run following command and follow the steps
+
+cd $GRID_HOME
+./gridSetup.sh
+
+configure an oracle standalone cluster  --->1st OPTION
+NEXT 
+cluster name : node-cluster 
+scan name : node-scan 
+scan port : 1521
+next 
+next --->if you want to add any another node then click on add
+
+enpos3 192.168.56.0 Public
+enp0s8	192.168.10.0	ASM& Private
+enp0s9	192.168.0.0 DO NOT USE  -->other all options are donotuse
+next 
+
+use oracle flex asm for STORAGE
+next 
+NO then next 
+
+select external option change directory path /dev/oracleasm/disks* then select corresponding Disk then next 
+
+user same password option (ex:oracle)
+next 
+
+do not use intelligent platform (2nd option)
+next 
+
+next 
+
+oinstall
+oinstall
+oinstall
+next (warning YES)
+
+next 
+
+select automatically run root script option and give root password
+NEXT
+
+fix and check again run the given scripts
+
+root
+====
+ps -ef|grep pmon
+
+ps -ef|grep d.bin
+
+/u01/app/19c/gridhome_1/bin/crsctl check crs 
+-->(it shows all are online)
+
+/u01/app/19c/gridhome_1/bin/crsctl check cluster -all 
+-->(it shows all are online)
+
+/u01/app/19c/gridhome_1/bin/crsctl stat res -t 
+
+grid user 
+==========
+run asmca from grid user for creating disk group 
+
+
+oracle user 
+============ 
+login to oracle user 
+cd $ORACLE_HOME 
+./runInstaller
+
+setup software only ,next 
+oracle real application cluster database installation 
+select node next 
+enterprise edition 
+NEXT 
+next 
+all options as oinstall 
+select auto run root scripts 
+ 
+ NEXT 
+ finish/close 
+ 
+ sqlplus -v 			---check in all nodes 
+ 
+ 
+ dbca
+ 
+ connect to sqlplus / as sysdba from oracle user 
+ def 
+ 
+ select name,open_mode,database_role from v$database;
+ select inst_id,instance_name,status from gv$instance;
+ 
+ srvctl status database -d <dbname> -v 
+ 
+ ps -ef|grp pmon
+ 
+
+
+
+
+
+
+
+
